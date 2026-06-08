@@ -19,8 +19,8 @@ module Teyca
       def call
         validate_owner!
 
-        @db.transaction do
-          locked_user!
+        @db.transaction(**transaction_opts) do
+          lock_rows!
           validate_state!
           apply_changes!
         end
@@ -32,29 +32,43 @@ module Teyca
 
       def operation
         @operation ||= Teyca::Models::Operation[@operation_id] ||
-                       raise(OperationNotFound, "Operation #{@operation_id} not found")
+                       raise(OperationNotFound, "Операция #{@operation_id} не найдена")
       end
 
       def user
         @user ||= Teyca::Models::User[@user_payload[:id]] ||
-                  raise(OperationNotFound, "User #{@user_payload[:id]} not found")
+                  raise(OperationNotFound, "Пользователь #{@user_payload[:id]} не найден")
       end
 
       def validate_owner!
-        raise OperationForbidden, 'Operation belongs to another user' if operation.user_id != user.id
+        raise OperationForbidden, 'Операция принадлежит другому пользователю' if operation.user_id != user.id
       end
 
-      def locked_user!
-        # Re-fetch under SELECT...FOR UPDATE so concurrent submits serialize.
-        row = Teyca::Models::User.where(id: user.id).for_update.first
-        @user = row || raise(OperationNotFound, "User #{@user_payload[:id]} not found")
+      # SQLite silently ignores SELECT...FOR UPDATE, so row locks alone do not
+      # serialize concurrent submits. An IMMEDIATE transaction takes the database
+      # write lock at BEGIN, making a second submit of the same operation wait for
+      # the first to commit (and then observe done? == true). On adapters that do
+      # support row locks the option is ignored and for_update does the serializing.
+      def transaction_opts
+        @db.database_type == :sqlite ? { mode: :immediate } : {}
+      end
+
+      # Re-read and lock both rows inside the transaction. The @operation/@user
+      # cached by validate_owner! were read before BEGIN; validating against them
+      # lets a parallel submit pass validate_state! on a stale done? == false and
+      # write off the bonus twice. Re-fetching under FOR UPDATE closes that race.
+      def lock_rows!
+        @user = Teyca::Models::User.where(id: user.id).for_update.first ||
+                raise(OperationNotFound, "Пользователь #{@user_payload[:id]} не найден")
+        @operation = Teyca::Models::Operation.where(id: operation.id).for_update.first ||
+                     raise(OperationNotFound, "Операция #{@operation_id} не найдена")
       end
 
       def validate_state!
-        raise InvalidWriteOff,        'write_off must be non-negative' if @write_off.negative?
-        raise OperationAlreadyDone,   "Operation #{operation.id} already done" if operation.done?
-        raise WriteOffExceedsAllowed, "max allowed is #{allowed_write_off}" if @write_off > allowed_write_off
-        raise WriteOffExceedsBonus,   "user bonus is #{user.bonus}" if @write_off > Money.to_d(user.bonus)
+        raise InvalidWriteOff,        'Сумма списания не может быть отрицательной' if @write_off.negative?
+        raise OperationAlreadyDone,   "Операция #{operation.id} уже подтверждена" if operation.done?
+        raise WriteOffExceedsAllowed, "Максимально допустимое списание: #{allowed_write_off}" if @write_off > allowed_write_off
+        raise WriteOffExceedsBonus,   "Недостаточно бонусов: доступно #{user.bonus}" if @write_off > Money.to_d(user.bonus)
       end
 
       def apply_changes!

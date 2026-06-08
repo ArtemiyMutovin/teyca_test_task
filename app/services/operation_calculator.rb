@@ -19,7 +19,7 @@ module Teyca
       private
 
       def user
-        @user ||= Teyca::Models::User[@user_id] || raise(UserNotFound, "User #{@user_id} not found")
+        @user ||= Teyca::Models::User[@user_id] || raise(UserNotFound, "Пользователь #{@user_id} не найден")
       end
 
       def template

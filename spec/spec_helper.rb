@@ -4,9 +4,22 @@ require 'rspec'
 require 'rack/test'
 require 'json'
 
+# Build the schema before loading the app: the Sequel models query their table
+# layout at load time, so the tables must already exist. This lets a clean
+# checkout run `bundle exec rspec` without a separate `rake db:setup` step.
+require 'sequel'
+Sequel.extension :migration
+require_relative '../config/database'
+Sequel::Migrator.run(Teyca::Database.connect, File.expand_path('../db/migrations', __dir__))
+
 require_relative '../app'
+require_relative '../db/seeds'
 
 RSpec.configure do |config|
+  # Load canonical seed data once. The seed is idempotent and per-example
+  # mutations are rolled back by the around hook below.
+  config.before(:suite) { Teyca::Seeds.run }
+
   config.expect_with :rspec do |expectations|
     expectations.include_chain_clauses_in_custom_matcher_descriptions = true
   end

@@ -1,1 +1,8 @@
 .idea/
+
+# Generated SQLite database — rebuild it from code with `rake db:setup`
+*.db
+*.db.bak
+
+# Local Postman collection — not part of the repo
+*.postman_collection.json

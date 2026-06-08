@@ -1,6 +1,6 @@
 source 'https://rubygems.org'
 
-ruby '3.4.1'
+ruby '~> 3.4.0'
 
 gem 'sinatra', '~> 4.0'
 gem 'sinatra-contrib', '~> 4.0'
@@ -10,6 +10,7 @@ gem 'puma', '~> 6.0'
 gem 'rackup', '~> 2.1'
 
 group :development, :test do
+  gem 'rake', '~> 13.0'
   gem 'rspec', '~> 3.13'
   gem 'rack-test', '~> 2.2'
 end
